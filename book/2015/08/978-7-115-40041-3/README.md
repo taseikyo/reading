@@ -1033,3 +1033,164 @@ recurseList(numbers)
 ## 3.5 Stream 和作业顺序重排
 
 # 第 4 章 用巧不用蛮
+
+很多函数式编程构造的目的只有一个：从频繁出现的场景中消灭掉烦人的实现细节
+
+## 4.1 记忆（memoization）
+
+“memoization”这个词是英国的人工智能研究者 Donald Michie 生造出来的，指的是在函数级别上对需要多次使用的值进行缓存的机制
+
+只有纯（pure）函数才可以适用缓存技术。纯函数是没有副作用的函数：它不引用其他值可变的类字段，除返回值之外不设置其他的变量，其结果完全由输入参数决定。只有在函数对同样一组参数总是返回相同结果的前提下，我们才可以放心地使用缓存起来的结果
+
+### 4.1.1 缓存
+
+#### 1. 方法级别的缓存
+
+#### 2. 缓存求和结果
+
+#### 3. 缓存一切结果
+
+### 4.1.2 引入“记忆”
+
+函数式编程费了很大的力气来遏制不确定因素，并为此在运行时里内建了多种重用机制。“记忆”是其中的一种特性，它作为编程语言的固有设施，自动地缓存重复出现的函数返回值。
+
+Groovy 语言记忆一个函数的办法是，先将要记忆的函数定义成闭包，然后对该闭包执行 `memoize()` 方法来获得一个新函数，以后我们调用这个新函数的时候，其结果就会被缓存起来。
+
+“记忆一个函数”这件事情，运用了所谓的“元函数”技法：我们操纵的对象是函数本身，而非函数的结果
+
+```Groovy
+// 例 4-4 记忆求和结果
+package com.nealford.ft.memoization
+class ClassifierMemoizedSum {
+    def static isFactor(number, potential) {
+        number % potential == 0;
+    }
+
+    def static factorsOf(number) {
+        (1..number).findAll { i -> isFactor(number, i) }
+    }
+
+    def static sumFactors = { number ->
+        factorsOf(number).inject(0, {i, j -> i + j})
+    }
+
+    def static sumOfFactors = sumFactors.memoize()
+    def static isPerfect(number) {
+        sumOfFactors(number) == 2 * number
+    }
+    def static isAbundant(number) {
+        sumOfFactors(number) > 2 * number
+    }
+    def static isDeficient(number) {
+        sumOfFactors(number) < 2 * number
+    }
+}
+```
+
+表4-6：Groovy语言提供的几个记忆方法
+
+| 方法 | 说明 |
+|:---:|---|
+| memoize() | 将闭包转化为带缓存的实例 |
+| memoizeAtMost() | 将闭包转化为带缓存的实例，且规定了缓存的数量上限 |
+| memoizeAtLeast() | 将闭包转化为带缓存的实例，缓存大小可自动调整，且规定了缓存的数量下限 |
+| memoizeBetween() | 将闭包转化为带缓存的实例，缓存大小可自动调整，且规定了缓存的数量上限和下限 |
+
+> 语言设计者实现出来的机制总是比开发者自己做的效率更高，因为他们可以不受语言本身的限制
+
+手工建立缓存的工作不算复杂，但它给代码增加了状态的影响和额外的复杂性。而借助函数式语言的特性，例如记忆，我们可以在函数的级别上完成缓存工作，只需要微不足道的改动，就能取得比命令式做法更好的效果。在函数式编程消除了不确定因素之后，我们得以专注解决真正的问题。
+
+```Groovy
+// 例 4-6 内联声明函数的记忆能力，Groovy 实现
+package com.nealford.javanext.memoizehashing
+class NameHash {
+    def static hash = {name ->
+        name.collect{rot13(it)}.join()
+    }.memoize()
+
+    public static char rot13(s) {
+        char c = s
+        switch (c) {
+            case 'A'..'M':
+            case 'a'..'m': return c + 13
+            case 'N'..'Z':
+            case 'n'..'z': return c - 13
+            default: return c
+        }
+    }
+}
+```
+
+> 请保证所有被记忆的函数：
+>
+> - 没有副作用
+> - 不依赖任何外部信息
+
+## 4.2 缓求值（laziness）
+
+缓求值（lazy evaluation）是函数式编程语言常见的一种特性，指尽可能地推迟求解表达式
+
+缓求值的集合不会预先算好所有的元素，而是在用到的时候才落实下来，这样做有几个好处:
+
+1. 昂贵的运算只有到了绝对必要的时候才执行
+2. 我们可以建立无限大的集合，只要一直接到请求，就一直送出元素
+3. 按缓求值的方式来使用映射、筛选等函数式概念，可以产生更高效的代码
+
+### 4.2.1 Java语言下的缓求值迭代子
+
+### 4.2.2 使用 Totally Lazy 框架的完美数分类实现
+
+### 4.2.3 Groovy语言的缓求值列表
+
+缓求值列表是函数式语言普遍具备的特性，这种列表只在需要的时刻才产生其中的内容。缓求值列表的作用之一是暂缓初始化昂贵的资源，除非到了绝对必要的时候。缓求值列表还可以用来构建无限序列，也就是没有上边界的列表。
+
+### 4.2.4 构造缓求值列表
+
+编程语言可以分成急切求解所有表达式的严格求值，以及推迟求解直到最后关头的缓求值两个类别
+
+### 4.2.5 缓求值的好处
+
+1. 创建无限长度的序列
+2. 减少占用的存储空间
+3. 有利于运行时产生更高效率的代码
+
+### 4.2.6 缓求值的字段初始化
+
+Scala 和 Groovy 语言都为推迟昂贵的初始化工作提供了便利。
+
+Scala 只要在 val 声明前面加上“lazy”字样，就可以令字段从严格求值变成按需要求值：
+
+```Scala
+lazy val x = timeConsumingAndOrSizableComputation()
+
+// 相当于下面代码
+var _x = None
+def x = if (_x.isDefined) _x.get else {
+    _x = Some(timeConsumingAndOrSizableComputation())
+    _x.get
+}
+```
+
+Groovy 也提供了效果差不多的便利语法，不过它是通过一种高级语言特性*抽象语法树变*换来实现的
+
+```Groovy
+// 例 4-23 Groovy 的缓初始化字段
+class Person {
+    @Lazy pets = ['Cat', 'Dog', 'Bird']
+}
+def p = new Person()
+assert !(p.dump().contains('Cat'))
+assert p.pets.size() == 3
+assert p.dump().contains('Cat')
+```
+
+更进一步，我们可以让 Groovy 通过软引用（soft reference）来持有缓初始化的字段，软引用是 Java 平台上可以按需要回收的一种指针引用：
+
+```Groovy
+class Person {
+    @Lazy(soft = true) List pets = ['Cat', 'Dog', 'Bird']
+}
+```
+
+最后我们得到内存使用效率最高的一个版本，一边尽量推迟初始化，一边积极地按需回收内存。
+
