@@ -727,3 +727,309 @@ Groovy 提供了两个版本的 `inject()` 来完成化约操作，分别对应�
 #### 3. Clojure
 
 Clojure 在它的 Reducers 库（ http://clojure.org/reducers ）里提供了更多与化约操作相关的高级功能
+
+# 第 3 章 权责让渡
+
+函数式思维的好处之一，是能够将低层次细节（如垃圾收集）的控制权移交给运行时，从而消弭了一大批注定会发生的程序错误。开发者们可以一边熟视无睹地享受着最基本的抽象，比如内存，一边却会对更高层次的抽象感觉突兀。然而不管层次高低，抽象的目的总是一样的：让开发者从繁琐的运作细节里解脱出来，去解答问题中非重复性的那些方面。
+
+本章将展示在函数式语言中，向语言和运行时让渡控制权的五种途径，让开发者抛开负累，投入到更有意义的问题中去
+
+## 3.1 迭代让位于高阶函数
+
+在很多情况下，我们使用一个抽象，比如 Stream 的时候，必须清楚可能产生的连带后果。很多开发者都没认识到，即使有了 Java 8 的 Stream API，他们仍然需要理解 Fork/Join 库的细节才能写出高性能的代码。当你掌握了背后的原理，才能把力量用在最正确的地方。
+
+> 理解掌握的抽象层次永远要比日常使用的抽象层次更深一层
+
+## 3.2 闭包
+
+闭包（closure）是所有函数式语言都具备的一项平常特性，它是一种特殊的函数，在暗地里绑定了函数内部引用的所有变量。换句话说，这种函数（或方法）把它引用的所有东西都放在一个上下文里“包”了起来。
+
+```Groovy
+// 例 3-1 Groovy 语言中闭包绑定的简单示例
+class Employee {
+    def name, salary
+}
+def paidMore(amount) {
+    return {Employee e -> e.salary > amount}
+}
+isHighPaid = paidMore(100000)
+```
+
+例 3-1 首先定义了一个简单的 Employee 类，类中带有两个字段。接着定义带有 amount 参数的 paidMore 函数，其返回值是一个以 Employee 实例为参数的代码块，或者叫闭包。
+
+我们给代码块传入参数值 100000，并赋予 isHighPaid 的名称，于是数值 100000 就随着这一步赋值操作，永久地和代码块绑定在一起了。
+
+以后有员工数据被代入这个代码块求解的时候，它就可以拿绑定的数值作为标准去评判员工的工资高低。
+
+```Groovy
+// 例 3-2 执行闭包
+def Smithers = new Employee(name:"Fred", salary:120000)
+def Homer = new Employee(name:"Homer", salary:80000)
+println isHighPaid(Smithers)
+println isHighPaid(Homer)
+// true, false
+```
+
+闭包在生成的时候，会把引用的变量全部圈到代码块的作用域里，封闭、包围起来（故名闭包）。闭包的每个实例都保有自己的一份变量取值，包括私有变量也是如此。
+
+```Groovy
+// 例 3-4 闭包的原理（Groovy 示例）
+def Closure makeCounter() {
+    def local_variable = 0
+    return { return local_variable += 1 } // ➊
+}
+c1 = makeCounter() // ➋
+c1() // ➌
+c1()
+c1()
+c2 = makeCounter() // ➍
+println "C1 = ${c1()}, C2 = ${c2()}"
+// output: C1 = 4, C2 = 1 // ➎
+```
+
+- ➊ 函数的返回值是一个代码块，而不是一个值
+- ➋ c1 现在指向代码块的一个实例
+- ➌ 调用 c1 将递增其内部变量，如果这个时候输出，其结果会是 1
+- ➍ c2 现在指向 makeCounter() 的一个全新实例，与其他实例没有关联
+- ➎ 每个实例的内部状态都是独立的，各自拥有一份 local_variable
+
+> 让语言去管理状态
+
+闭包还是 **推迟执行** 原则的绝佳样板。我们把代码绑定到闭包之后，可以推迟到适当的时机再执行闭包
+
+命令式语言围绕状态来建立编程模型，参数传递是其典型特征。闭包作为一种对行为的建模手段，让我们把代码和上下文同时封装在单一结构，也就是闭包本身里面，像传统数据结构一样可以传递到其他位置，然后在恰当的时间和地点完成执行
+
+> 抓住上下文，而非状态
+
+## 3.3 柯里化和函数的部分施用
+
+柯里化（currying）和函数的部分施用（partial application）都是从数学里借用过来的编程语言技法（基于 20 世纪 Haskell Curry 等数学家的研究成果）。这两种技法以不同的面目出现在各种类型的语言里，在函数式语言当中尤为普遍。柯里化和部分施用都有能力操纵函数或方法的参数数目，一般是通过向一部分参数代入一个或多个默认值的办法来实现的（这部分参数被称为“固定参数”）
+
+### 3.3.1 定义与辨析
+
+柯里化指的是从一个多参数函数变成一连串单参数函数的变换。它描述的是变换的过程，不涉及变换之后对函数的调用。
+
+部分施用指通过提前代入一部分参数值，使一个多参数函数得以省略部分参数，从而转化为一个参数数目较少的函数。
+
+柯里化和部分施用都是在我们提供部分参数值之后，产出可以凭余下参数实施调用的一个函数。不同的地方在于，函数柯里化的结果是返回链条中的下一个函数，而部分施用是把参数的取值绑定到用户在操作中提供的具体值上，因而产生一个“元数”（参数的数目）较少的函数
+
+举个例子，函数 `process(x, y, z)` 完全柯里化之后将变成 `process(x)(y)(z)` 的形式，其中 `process(x)` 和 `process(x)(y)` 都是单参数的函数。如果只对第一个参数柯里化，那么 `process(x)` 的返回值将是一个单参数的函数，而这个唯一的参数又接受另一个参数的输入
+
+而部分施用的结果直接是一个减少了元数的函数。如果在 `process(x, y, z)` 上部分施用一个参数，那么我们将得到还剩下两个参数的函数：`process(y, z)`
+
+- Groovy 实现了部分施用也实现了柯里化，但是它把两者都叫作柯里化
+- Scala 既有部分施用函数（partially applied function），又有名称相近的偏函数类 `PartialFunction`，可它们是截然不同的两个概念。
+
+### 3.3.2 Groovy 的情况
+
+Groovy 通过 `curry()` 函数实现柯里化，这个函数来自 `Closure` 类
+
+```Groovy
+// 例 3-6 Groovy 语言中的柯里化
+def product = { x, y -> x * y }
+def quadrate = product.curry(4) ➊
+def octate = product.curry(8) ➋
+println "4x4: ${quadrate.call(4)}" ➌
+println "8x5: ${octate(5)}" ➍
+```
+
+- ➊ 调用 `curry()` 来固定一个参数，返回结果是一个单参数的函数
+- ➋ `octate()` 函数总是对传入的参数乘以 8
+- ➌ `quadrate()` 是一个单参数的函数，可以通过 Closure 类的 `call()` 方法来调用它
+- ➍ Groovy 提供了一层语法糖衣，可以让调用语句的写法更自然一些
+
+`curry()` 虽然叫这个名字，它在背后对代码块所做的事情其实属于函数的部分施用
+
+```Groovy
+// 例 3-7 Groovy 语言中部分施用与柯里化的对比
+def volume = {h, w, l -> h * w * l}
+def area = volume.curry(1)
+def lengthPA = volume.curry(1, 1) ➊
+def lengthC = volume.curry(1).curry(1) ➋
+println "参数取值为2x3x4的长方体，体积为${volume(2, 3, 4)}"
+println "参数取值为3x4的长方形，面积为${area(3, 4)}"
+println "参数取值为6的线段，长度为${lengthPA(6)}"
+println "参数取值为6的线段，经柯里化函数求得的长度为${lengthC(6)}"
+```
+
+- ➊ 部分施用
+- ➋ 柯里化
+
+复合（composition），是函数式语言拼组这些构造单元的一般方式，这方面的详细讨论放在 [第 6 章](#第-6-章-模式与重用)
+
+```Groovy
+// 例 3-8 Groovy 语言中函数的复合
+def composite = { f, g, x -> return f(g(x)) }
+def thirtyTwoer = composite.curry(quadrate, octate)
+println "composition of curried functions yields ${thirtyTwoer(2)}"
+```
+
+### 3.3.3 Clojure 的情况
+
+Clojure 有一个 `(partial f a1 a2 ...)` 函数，我们传给它函数 f 和若干数量不足的参数，它将返回经过部分施用的函数 f，可凭余下的参数进行调用
+
+```Clojure
+; 例 3-9 Clojure 语言中的部分施用技法
+(def subtract-from-hundred (partial - 100))
+(subtract-from-hundred 10) ; same as (- 100 10)
+; 90
+(subtract-from-hundred 10 20) ; same as (- 100 10 20)
+; 70
+```
+
+由于 Clojure 是动态类型的语言，并且支持可变长度的参数列表，它没有将柯里化实现成一种语言特性，相关的场景交由部分施用去处理
+
+Clojure 在 Reducers 库里有一个命名空间内私有的 `(defcurried ...)` 函数，虽然其本意是方便库内的函数定义，但凭借 Lisp 家族血脉里与生俱来的灵活性，扩大一下 `(defcurried ...)` 的使用范围简直小菜一碟
+
+### 3.3.4 Scala 的情况
+
+Scala 支持柯里化和部分施用，另外还有一个用来定义偏函数的 trait
+
+#### 1. 柯里化
+
+Scala 允许函数定义多组参数列表，每组写在一对圆括号里。当我们用少于定义数目的参数来调用函数的时候，将返回一个以余下的参数列表为参数的函数
+
+```Scala
+// 例 3-10 Scala 语言中的参数柯里化
+def filter(xs: List[Int], p: Int => Boolean): List[Int] =
+    if (xs.isEmpty) xs
+    else if (p(xs.head)) xs.head :: filter(xs.tail, p)
+    else filter(xs.tail, p)
+
+def modN(n: Int)(x: Int) = ((x % n) == 0)
+
+val nums = List(1, 2, 3, 4, 5, 6, 7, 8)
+println(filter(nums, modN(2)))
+println(filter(nums, modN(3)))
+```
+
+#### 2. 部分施用函数
+
+```Scala
+// 例 3-11 Scala 语言中函数的部分施用
+def price(product : String) : Double =
+    product match {
+        case "apples" => 140
+        case "oranges" => 223
+}
+
+def withTax(cost: Double, state: String) : Double =
+    state match {
+        case "NY" => cost * 2
+        case "FL" => cost * 3
+}
+
+val locallyTaxed = withTax(_: Double, "NY")
+val costOfApples = locallyTaxed(price("apples"))
+
+assert(Math.round(costOfApples) == 280)
+```
+
+#### 3. 偏函数
+
+Scala 设计出 PartialFunction trait 是为了密切配合语言中的模式匹配特性，其详情可参阅第 6 章。尽管名称相似，PartialFunction trait 并不生成部分施用函数。它的真正用途是描述只对定义域中一部分取值或类型有意义的函数。
+
+```Scala
+// 例 3-12 不和 match 一起出现的 case
+val cities = Map("Atlanta" -> "GA", "New York" -> "New York",
+    "Chicago" -> "IL", "San Francsico " -> "CA", "Dallas" -> "TX")
+
+cities map { case (k, v) => println(k + " -> " + v) }
+```
+
+```Scala
+// 例 3-13 map 和 collect 的区别
+List(1, 3, 5, "seven") map { case i: Int => i + 1 } // 无法顺利完成
+// scala.MatchError: seven (of class java.lang.String)
+List(1, 3, 5, "seven") collect { case i: Int => i + 1 }
+// 验证结果
+assert(List(2, 4, 6) == (List(1, 3, 5, "seven") collect { case i: Int => i + 1 }))
+```
+
+Case 语句定义了偏函数（`partial function`），请注意不要和名称相近的部分施用函数相混淆。偏函数的参数被限定了取值范围。例如数学函数 1/x 在 x = 0 的时候是无意义的。
+
+```Scala
+// 例 3-14 在 Scala 语言中定义偏函数
+val answerUnits = new PartialFunction[Int, Int] {
+    def apply(d: Int) = 42 / d
+    def isDefinedAt(d: Int) = d != 0
+}
+
+assert(answerUnits.isDefinedAt(42))
+assert(! answerUnits.isDefinedAt(0))
+assert(answerUnits(42) == 1)
+// answerUnits(0)
+// java.lang.ArithmeticException: / by zero
+```
+
+```Scala
+// 例 3-15 answerUnits 的另一种写法
+def pAnswerUnits: PartialFunction[Int, Int] =
+    { case d: Int if d != 0 => 42 / d }
+assert(pAnswerUnits(42) == 1)
+//pAnswerUnits(0)
+//scala.MatchError: 0 (of class java.lang.Integer)
+```
+
+### 3.3.5 一般用途
+
+#### 1. 函数工厂
+
+我们在传统面向对象编程中会用到工厂方法的场合，正适合柯里化（以及部分施用）表现它的才干
+
+```Groovy
+// 例 3-17 Groovy 实现的加法函数和递增函数
+def adder = { x, y -> x + y}
+def incrementer = adder.curry(1)
+println "increment 7: ${incrementer(7)}" // 8
+```
+
+#### 2. Template Method模式
+
+GoF 模式集里面有一项 Template Method（模板方法）模式。其用意是在固定的算法框架内部安排一些抽象方法，为后续的具体实现保留一部分灵活性。部分施用和柯里化也可以起到相同的作用。部分施用技法注入当前已经确定的行为，留下未确定的参数给具体实现去发挥，其思路与模板方法这种面向对象的设计模式如出一辙。
+
+#### 3. 隐含参数
+
+当我们需要频繁调用一个函数，而每次的参数值都差不多的时候，可以运用柯里化来设置隐含参数
+
+
+```Clojure
+// 例 3-18 运用部分施用技法设置隐含参数值
+(defn db-connect [data-source query params]
+    ...)
+(def dbc (partial db-connect "db/some-data-source"))
+(dbc "select * from %1" "cust")
+```
+
+例 3-18 的 dbc 函数在操作数据的时候不需要再提供数据源，数据源已经自动设置好了。面向对象编程中“封装”概念的本质，也就是魔术般出现在每个函数里的隐含上下文 this，我们可以在函数式编程中加以模拟，用柯里化的方式把 this 传递给所有的函数，让 this在使用者的面前隐藏起来。
+
+## 3.4 递归
+
+### 换个角度看列表
+
+Groovy 大大加强了 Java 集合库的能力，其中就包括新增了许多函数式结构
+
+在 C 或类 C 语言（包括 Java）出身的开发者的头脑里面，列表概念通常会被塑造成一个带索引的集合。对于诸多函数式语言来说，它们眼中的列表形象有些不一样，所幸 Groovy 也持同样的观点。它们看到的不是带索引的格子，而是看成由列表的第一个元素（叫作头部）和列表的其余元素（叫作尾部）这两部分组合而成，如图 3-2 所示。
+
+![](../../../../image/2024/11/978-7-115-40041-3/3-2.jpg)
+
+图 3-2：分成头和尾两部分的列表形象
+
+```Groovy
+// 例 3-20 以递归方式进行的列表遍历
+def recurseList(listOfNums) {
+    if (listOfNums.size == 0) return;
+    println "${listOfNums.head()}"
+    recurseList(listOfNums.tail())
+}
+println "\n递归式的列表遍历"
+recurseList(numbers)
+```
+
+> 尾调用优化
+>
+> 递归没有成为一种平常的操作，其中一个主要原因是栈的增长。递归操作一般的实现方式，都是把中间结果放在栈里，于是没有为递归专门优化的语言就会遇到栈溢出的问题。而像 Scala、Clojure 这些语言则各自采用了不同的方式来规避这方面的局限。开发者也可以在这个问题上出一点力，使用尾调用优化（tail-call optimization）的写法来帮助运行时克服栈的增长问题。当递归调用是函数执行的最后一个调用的时候，运行时往往可以在栈里就地更新，而不需要增加新的栈空间。
+
+## 3.5 Stream 和作业顺序重排
+
+# 第 4 章 用巧不用蛮
