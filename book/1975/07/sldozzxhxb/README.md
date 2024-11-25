@@ -4,7 +4,7 @@
 - 出版时间：1975-07
 - 封面：
 
-![](../../../../image/2024/11/sldozzxhxb.jpg)
+![](image/sldozzxhxb.jpg)
 
 # 一、关于苏修新资产阶级特权阶层
 
