@@ -4,11 +4,12 @@
 
 ## 视频
 
-<video controls>
+- [video/mda-piffuh5bve0zs580.mp4](video/mda-piffuh5bve0zs580.mp4)
+
+<video controls autoplay>
 	<source src="video/mda-piffuh5bve0zs580.mp4" type="video/mp4">
 	Your browser does not support the video tag.
 </video>
-
 
 ## 原文
 
