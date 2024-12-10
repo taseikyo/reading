@@ -40,3 +40,4 @@
 | 诗词歌赋 | 作者 | 出处 |
 |:---:|---|---|
 | [枯树赋](poem/yuxin/kushufu/README.md) | 庾信 | 庾子山集 |
+| [别赋](poem/jiangyan/biefu/README.md) | 江淹 | 文选 |
