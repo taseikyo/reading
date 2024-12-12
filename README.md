@@ -13,6 +13,9 @@
 | [为人民服务](report/1944/09/440908-mzd/README.md) | 毛泽东 | | 1944-09-08 |
 | [纪念白求恩](report/1939/12/391221-mzd/README.md) | 毛泽东 | | 1939-12-21 |
 | [葛底斯堡演说](report/1863/11/631119-lincoln/README.md) | 林肯 | 葛底斯堡国家公墓揭幕式 | 1863-11-19 |
+| [周恩来总理在亚非会议全体会议上的补充发言](report/1955/04/550419-zel/README.md) | 周恩来 | 万隆会议 | 1955-04-19 |
+| [2024年年终回顾和2025年展望——对冲风险VS软着陆](report/2024/11/241124-fp/README.md) | 付鹏 | 2024汇丰私人财富规划 | 2024-11-24 |
+| [孤臣可弃，但绝不折节](report/2015/10/151017-hxj/README.md) | 洪秀柱 | “临时全国代表大会” | 2015-10-17 |
 
 ## book
 
@@ -33,3 +36,11 @@
 | 传名 | 作者 | 史书 |
 |:---:|---|---|
 | [刘盆子列传](biography/houhanshu/liupenzizhuan/README.md) | 范晔 | 后汉书 |
+| [刘牢之传](biography/jinshu/liulaozhi/README.md) | 房玄龄 | 晋书 |
+
+## poem
+
+| 诗词歌赋 | 作者 | 出处 |
+|:---:|---|---|
+| [枯树赋](poem/yuxin/kushufu/README.md) | 庾信 | 庾子山集 |
+| [别赋](poem/jiangyan/biefu/README.md) | 江淹 | 文选 |
