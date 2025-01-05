@@ -1194,3 +1194,326 @@ class Person {
 
 最后我们得到内存使用效率最高的一个版本，一边尽量推迟初始化，一边积极地按需回收内存。
 
+# 第 5 章 演化的语言
+
+函数式编程语言和面向对象语言对待代码重用的方式不一样。面向对象语言喜欢大量地建立有很多操作的各种数据结构，函数式语言也有很多的操作，但对应的数据结构却很少。
+
+面向对象语言鼓励我们建立专门针对某个类的方法，我们从类的关系中发现重复出现的模式并加以重用。函数式语言的重用表现在函数的通用性上，它们鼓励在数据结构上使用各种共通的变换，并通过高阶函数来调整操作以满足具体事项的要求。
+
+## 5.1 少量的数据结构搭配大量的操作
+
+> 100 个函数操作一种数据结构的组合，要好过 10 个函数操作 10 种数据结构的组合。 ——Alan Perlis
+
+在面向对象的命令式编程语言里面，重用的单元是类和用作类间通信的消息，通常可以表述成一幅类图（class diagram）。
+
+比起在定制的类结构上做文章，把封装的单元缩小到函数级别，有利于在更基础的层面上更细粒度地实施重用。
+
+```Clojure
+;; 例 5-1 用 Clojure 语言解析 XML
+(use 'clojure.xml)
+(def WEATHER-URI "http://weather.yahooapis.com/forecastrss?w=%d&u=f")
+(defn get-location [city-code]
+    (for [x (xml-seq (parse (format WEATHER-URI city-code)))
+        :when (= :yweather:location (:tag x))]
+    (str (:city (:attrs x)) "," (:region (:attrs x)))))
+
+(defn get-temp [city-code]
+    (for [x (xml-seq (parse (format WEATHER-URI city-code)))
+        :when (= :yweather:condition (:tag x))]
+        (:temp (:attrs x))))
+
+(println "weather for " (get-location 12770744) "is " (get-temp 12770744))
+```
+
+例 5-1 访问了 Yahoo! 的天气服务来取得给定城市的天气预报。Clojure 作为一种 Lisp 变种，它的代码按照由内而外的顺序阅读起来会容易一些。
+
+对服务端口的实际调用发生在 `(parse (format WEATHER-URI city-code))`，这里利用了 String 类的 `format()` 函数来向字符串中嵌入 `city-code` 字段。然后 `list comprehension` 函数 for 将经 xml-seq 转换后的 XML 解析结果，放入可查询的 map 结构 x。接下来由 `:when` 谓词进行匹配，我们要找的是 `:yweather:condition` 标签（已经被转换成 Clojure 关键字）。
+
+从天气服务返回的内容，解析过后会是下面的样子：
+
+```Clojure
+({:tag :yweather:condition, :attrs {:text Fair, :code 34, :temp 62, :date Tue,
+04 Dec 2012 9:51 am EST}, :content nil})
+```
+
+例 5-1 中调用 (:tag x)，意思相当于“从保存在 x 的 map 中取出 :tag 键所对应的值”。同理，通过 :yweather:condition 也可以取出它所对应的值，也就是另一个 map 结构 attrs。随后我们又用相同的语法，从 attrs 中取出了 :temp 键所对应的值。
+
+## 5.2 让语言去迎合问题
+
+很多开发者都有一种误解，认为自己的工作就是把复杂的业务问题翻译成某种编程语言
+
+另外一些开发者使用的语言可塑性更强，他们不会拿问题去硬套语言，而是想法揉捏手中的语言来迎合问题。不少语言显示出了这方面的潜力，例如 Ruby 对领域专用语言（DSL）的支持就比主流语言要强得多
+
+
+```Scala
+<!-- 例 5-2 Scala 语言为操作 XML 准备的语法糖衣 -->
+import scala.xml._
+import java.net._
+import scala.io.Source
+val theUrl = "http://weather.yahooapis.com/forecastrss?w=12770744&u=f"
+val xmlString = Source.fromURL(new URL(theUrl)).mkString
+val xml = XML.loadString(xmlString)
+val city = xml \\ "location" \\ "@city"
+val state = xml \\ "location" \\ "@region"
+val temperature = xml \\ "condition" \\ "@temp"
+println(city + ", " + state + " " + temperature)
+```
+
+## 5.3 对分发机制的再思考
+
+第 3 章介绍过的 Scala 的模式匹配特性，就是一种分发机制，我们用“分发机制”这个词来泛称各种语言中用作“动态地选择行为”的特性。
+
+### 5.3.1 Groovy 对分发机制的改进
+
+Java 代码要表述“条件执行”，除了很少的一些情况适用 switch 语句，大多离不开 if 语句。由于长串的 if 语句难以阅读，Java 开发者通常需要依赖 GoF 模式集里面的 Factory 模式（或者 Abstract Factory 模式）来缓解问题。
+
+如果语言直接提供更灵活的方式来表述复杂的判断，我们就不必负担随模式而来的额外的结构，于是代码就大大简化了。
+
+
+```Groovy
+// 例 5-3 Groovy 语言大幅改进过的 switch 语句
+package com.nealford.ft.polydispatch
+
+class LetterGrade {
+    def gradeFromScore(score) {
+        switch (score) {
+            case 90..100 : return "A"
+            case 80..<90 : return "B"
+            case 70..<80 : return "C"
+            case 60..<70 : return "D"
+            case 0..<60 : return "F"
+            case ~"[ABCDFabcdf]" : return score.toUpperCase()
+            default: throw new IllegalArgumentException("Invalid score: ${score}")
+    }
+}
+```
+
+Groovy 的 switch 语句允许使用宽泛的动态类型，没有 Java 的类型限制。
+
+Groovy 的 switch 也和 Java 一样，遵循相同的“fall-through”语义，如果没有用 return 或 break 来终结一则 case，就会继续“跌落”到下一则。但 Groovy 的case 条件不像 Java 那么死板，我们可以指定区间（90..100）、开区间（80..<90）、正则表达式（~"[ABCDFabcdf]"），最后写上兜底的 default 条件。
+
+### 5.3.2 “身段柔软”的Clojure语言
+
+Java 以及很多类似的语言都包含“关键字”的概念，把它们当作语法上的支点。在这类语言中，开发者不可以自创新的关键字（不过有的语言允许通过元编程来实现语言扩展），关键字蕴含了开发者无法从其他地方获得的语义。
+
+```Clojure
+;; 例 5-5 成绩分等的 Clojure 实现
+(ns lettergrades)
+
+(defn in [score low high]
+(and (number? score) (<= low score high)))
+
+(defn letter-grade [score]
+(cond
+(in score 90 100) "A"
+(in score 80 90) "B"
+(in score 70 80) "C"
+(in score 60 70) "D"
+(in score 0 60) "F"
+(re-find #"[ABCDFabcdf]" score) (.toUpperCase score)))
+```
+
+### 5.3.3 Clojure的多重方法和基于任意特征的多态
+
+Clojure 拥有面向对象语言的一切特性，不需要依靠其他特性来间接模拟。例如多态，不但是 Clojure 直接支持的一种特性，而且不必局限于按类来判断分发。Clojure 承载多态语义的多重方法（multimethod）特性允许开发者使用任意特征（及其组合）来触发分发。
+
+```Clojure
+;; 例 5-7 用 Clojure 定义一个表示色彩的数据结构
+(defstruct color :red :green :blue)
+
+(defn red [v]
+(struct color v 0 0))
+
+(defn green [v]
+(struct color 0 v 0))
+
+(defn blue [v]
+(struct color 0 0 v))
+```
+
+例 5-7 首先定义了包含三个分量值的结构来表示颜色。另外还定义了三个方法，各返回饱和度可调的一种单色。
+
+Clojure 的*多重方法*是一种特别的方法定义形式，它的参数是一个返回判断条件的分发函数。后续定义的一系列同名方法分别对应到不同的分发条件。
+
+```Clojure
+;; 例 5-8 定义一个多重方法
+(defn basic-colors-in [color]
+(for [[k v] color :when (not= v 0)] k))
+
+(defmulti color-string basic-colors-in)
+
+(defmethod color-string [:red] [color]
+(str "Red: " (:red color)))
+
+(defmethod color-string [:green] [color]
+(str "Green: " (:green color)))
+
+(defmethod color-string [:blue] [color]
+(str "Blue: " (:blue color)))
+
+(defmethod color-string :default [color]
+(str "Red:" (:red color) ", Green: " (:green color) ", Blue: " (:blue color)))
+```
+
+例 5-8 首先定义了 basic-colors-in 分发函数，它用一个 vector 结构返回所有非零的颜色分量。在方法的各实现版本中，我们针对分发函数的返回值是一种单色的情况做了特别处理；例中返回了一个标示颜色的字符串。我们给最后一个版本加上了可选的 :default 关键字，让它负责所有未作特殊处理的情况。这个方法收到的颜色值参数不再是单色的，因此返回时要列举所有的颜色分量。
+
+切断多态和继承之间的耦合关系，催生了一种强大的、灵活周全的分发机制。这样的分发机制能够处理相当复杂的情况，例如不同图像文件格式的分发问题，每种格式类型都是由各不相同的一组特征来定义的。多重方法赋予了 Clojure 构造强大分发机制的能力，其适应性不输于 Java 的多态，而且限制更少。
+
+## 5.4 运算符重载
+
+运算符重载是函数式语言常见的特性，它允许我们重新定义运算符（诸如 +、-、*），使之适用于新的类型，并承载新的行为。
+
+### 5.4.1 Groovy
+
+Groovy 希望既改造 Java 的语法，同时又自然地保留 Java 的语义。
+
+```Groovy
+// 例 5-10 Groovy 版的复数模型 ComplexNumber
+package complexnums
+
+class ComplexNumber {
+    def real, imaginary
+    public ComplexNumber(real, imaginary) {
+        this.real = real
+        this.imaginary = imaginary
+    }
+    
+    def plus(rhs) {
+        new ComplexNumber(this.real + rhs.real, this.imaginary + rhs.imaginary)
+    }
+
+    // 公式：(x + yi)(u + vi) = (xu – yv) + (xv + yu)i.
+    def multiply(rhs) {
+        new ComplexNumber(
+        real * rhs.real - imaginary * rhs.imaginary,
+        real * rhs.imaginary + imaginary * rhs.real)
+    }
+
+    def String toString() {
+        real.toString() + ((imaginary < 0 ? "" : "+") + imaginary + "i").toString()
+    }
+}
+```
+
+例 5-10 在类中定义了分别代表实部和虚部的属性，并为运算符重载实现了 `plus()` 和 `multiply()` 方法。
+
+### 5.4.2 Scala
+
+Scala 也支持运算符重载，它的做法是完全不区分运算符和方法：运算符不过是一些名字比较特别的方法罢了。
+
+```Scala
+<!-- 例 5-12 Scala 版的复数模型 -->
+final class Complex(val real: Int, val imaginary: Int) extends Ordered[Complex] {
+
+def +(operand: Complex) =
+new Complex(real + operand.real, imaginary + operand.imaginary)
+
+def +(operand: Int) =
+new Complex(real + operand, imaginary)
+
+def -(operand: Complex) =
+new Complex(real - operand.real, imaginary - operand.imaginary)
+
+def -(operand: Int) =
+new Complex(real - operand, imaginary)
+
+def *(operand: Complex) =
+new Complex(real * operand.real - imaginary * operand.imaginary,
+real * operand.imaginary + imaginary * operand.real)
+
+override def toString() =
+real + (if (imaginary < 0) "" else "+") + imaginary + "i"
+
+override def equals(that: Any) = that match {
+case other : Complex => (real == other.real) && (imaginary == other.imaginary)
+case other : Int => (real == other) && (imaginary == 0)
+case _ => false
+}
+
+override def hashCode(): Int =
+41 * ((41 + real) + imaginary)
+
+def compare(that: Complex) : Int = {
+    def myMagnitude = Math.sqrt(real ^ 2 + imaginary ^ 2)
+    def thatMagnitude = Math.sqrt(that.real ^ 2 + that.imaginary ^ 2)
+    (myMagnitude - thatMagnitude).round.toInt
+}
+```
+
+> 要想契合问题域的表达习惯，可以利用运算符重载来改变语言的外貌，不必创造全新的语言。
+
+## 5.5 函数式的数据结构
+
+Java 语言习惯使用异常来处理错误，语言本身提供了异常的创建和传播机制。
+
+“异常”违背了大多数函数式语言所遵循的一些前提条件。首先，函数式语言偏好没有副作用的纯函数。抛出异常的行为本身就是一种副作用，会导致程序路径偏离正轨（进入异常的流程）。函数式语言以操作值为其根本，因此喜欢在返回值里表明错误并作出响应，这样就不需要打断程序的一般流程了。
+
+*引用的透明性*（referential transparency）是函数式语言重视的另一项性质：发出调用的例程不必关心它的访问对象真的是一个值，还是一个返回值的函数。可是如果函数有可能抛出异常的话，用它来代替值就不再是安全的了。
+
+### 5.5.1 函数式的错误处理
+
+```java
+// 例 5-14 利用 Map 来返回多个值
+public static Map<String, Object> divide(int x, int y) {
+Map<String, Object> result = new HashMap<String, Object>();
+    if (y == 0)
+        result.put("exception", new Exception("被零除"));
+    else
+        result.put("answer", (double) x / y);
+    return result;
+}
+```
+
+用 Map 来返回多个值的设计存在一些明显的缺点。首先，Map 中放置的内容没有类型安全的保障，编译器无法捕捉到类型方面的错误。假如改用枚举类型来充当键，可以稍微弥补这个缺点，但效果有限。第二，方法的调用者无法直接得知执行是否成功，需要逐一比对所有可能键，给调用者带来负担。第三，没有办法强制结果只含有一对键值，届时将出现歧义。
+
+### 5.5.2 Either类
+
+函数式语言也经常会遇到返回两种截然不同的值的需求，它们用来建模这种行为的常用数据结构是 Either 类。
+
+Either 的设计规定了它要么持有“左值”，要么持有“右值”，但绝不会同时持有两者。这种数据结构也被称为不相交联合体（disjoint union）。C 语言和一些衍生语言中有一种联合体（union）数据类型，能够在同一个位置上容纳不同类型的单个实例。不相交联合体为两种类型的实例都准备了位置，但只会持有其中一种类型的单个实例。
+
+```Scala
+<!-- 例 5-16 Scala 自带的 Either 类 -->
+type Error = String
+type Success = String
+def call(url:String):Either[Error,Success]={
+    val response = WS.url(url).get.value.get
+    if (valid(response))
+        Right(response.body)
+    else Left("Invalid response")
+}
+```
+
+```Scala
+<!-- 例 5-17 Scala 的 Either 类和模式匹配 -->
+getContent(new URL("http://nealford.com")) match {
+case Left(msg) => println(msg)
+case Right(source) => source.getLines.foreach(println)
+}
+```
+
+有了 Either 这件利器，我们的代码就可以在确保类型安全的前提下，视情况返回异常或者有效结果（但不会同时返回两者）。按照函数式编程的传统习惯，异常（如果有的话）置于 Either 类的左值上，正常结果则放在右值。
+
+### 5.5.3 Option类
+
+Either 代表了一种使用方便、用途广泛的概念，除了用来实现双重返回值，还被用来构建一些通用的数据结构（如本章后面将讨论的基于 Either 的树结构）。
+
+在表示函数返回值这个用途上，有些语言和框架除了 Either 类之外，还存在另一个选项——Option。Option 类表述了异常处理中较为简化的一种场景，它的取值要么是 none，表示不存在有效值，要么是 some，表示成功返回。
+
+```Java
+// 例 5-30 Option 的用法
+public static Option<Double> divide(double x, double y) {
+if (y == 0)
+return Option.none();
+return Option.some(x / y);
+}
+```
+
+Option 类可以近似地看作 Either 类的一个子集；Option 一般只用来表示成功和失败两种情况，而Either 可以容纳任意的内容。
+
+### 5.5.4 Either树和模式匹配
+
+我们还可以进一步拓展 Either 的用途，用它来构造一棵树形结构，并模仿 Scala 的模式匹配来为该结构实现遍历方法。
+
+Either 利用 Java 的泛型支持，形成一种双重类型的数据结构，可以在其左值或右值上不同时地容纳两种类型的取值。
+
