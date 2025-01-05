@@ -1517,3 +1517,193 @@ Option 类可以近似地看作 Either 类的一个子集；Option 一般只用�
 
 Either 利用 Java 的泛型支持，形成一种双重类型的数据结构，可以在其左值或右值上不同时地容纳两种类型的取值。
 
+# 第 6 章 模式与重用
+
+## 6.1 函数式语言中的设计模式
+
+传统设计模式在函数式编程的世界中大致有三种归宿。
+
+- 模式已被吸收成为语言的一部分。
+- 模式中描述的解决办法在函数式范式下依然成立，但实现细节有所变化。
+- 由于在新的语言或范式下获得了原本没有的能力，产生了新的解决方案（例如很多问题都可以用元编程干净利落地解决，但 Java 没有元编程能力可用）。
+
+## 6.2 函数级别的重用
+
+复合（composition），作为一种重用机制，在函数式语言中主要表现为通过参数来传递作为第一等语言成分的函数，各种函数式编程库都频繁地运用了这种手法。
+
+面向对象系统由一群互相发送通信消息（或者叫调用方法）的对象组成。图 6-1 描绘了这样的一个面向对象系统。
+
+![](image/6-1.png)
+
+图 6-1：面向对象系统中的重用
+
+如果我们从中发现了一小群有价值的类以及相应的消息，就可以将这部分类关系提取出来，加以重用，如图 6-2 所示。
+
+![](image/6-2.png)
+
+图 6-2：从类关系图中提取有用的部分
+
+这方面集大成的《设计模式》毫无意外地成为了软件工程领域最深入人心的著作之一，它的工作就是汇总编目像图 6-2 那样提取出来的类关系。以模式为载体的重用随后遍地开花，编目和命名各方面模式的书籍纷纷涌现。这场设计模式运动极大地惠泽了软件开发世界，因为它为我们确立了可言说的名词术语和可参照的样例。
+
+### 6.2.1 Template Method模式
+
+函数被提升为第一等的语言成分，对 Template Method 模式的实现有简化的效果
+
+```Groovy
+// 例 6-1 Template Method 模式的“标准”实现
+package templates;
+
+abstract class Customer {
+    def plan
+    def Customer() {
+        plan = []
+    }
+
+    def abstract checkCredit()
+    def abstract checkInventory()
+    def abstract ship()
+
+    def process() {
+        checkCredit()
+        checkInventory()
+        ship()
+    }
+}
+```
+
+例 6-1 中 process() 方法依赖于 checkCredit()、checkInventory() 和 ship() 方法，这三个方法被设定为抽象方法，子类必须为它们提供具体实现。
+
+### 6.2.2 Strategy模式
+
+Strategy 模式也是因为第一等函数而得到简化的一种常用模式。Strategy 模式定义一个算法族，并将每一种算法都在相同的接口下封装起来，令同一族的算法能够互换使用。
+
+```Groovy
+// 例 6-4 用 Strategy 模式来处理两个数字的积的计算问题
+interface Calc {
+    def product(n, m)
+}
+
+class CalcMult implements Calc {
+    def product(n, m) { n * m }
+}
+
+class CalcAdds implements Calc {
+    def product(n, m) {
+        def result = 0
+        n.times {
+            result += m
+        }
+        result
+    }
+}
+```
+
+### 6.2.3 Flyweight模式和记忆
+
+Flyweight 模式是一种在大量的细粒度对象引用之间共享数据的优化技巧。我们维护一个对象池，然后引用池中的对象来构成需要的视图。
+
+```Groovy
+// 例 6-7 建立计算机品类模型的一些简单类
+class Computer {
+    def type
+    def cpu
+    def memory
+    def hardDrive
+    def cd
+}
+
+class Desktop extends Computer {
+    def driveBays
+    def fanWattage
+    def videoCard
+}
+
+class Laptop extends Computer {
+    def usbPorts
+    def dockingBay
+}
+
+class AssignedComputer {
+    def computerType
+    def userId
+    public AssignedComputer(computerType, userId) {
+        this.computerType = computerType
+        this.userId = userId
+}
+```
+
+按照这些类的设计，假如所有计算机都是一样的配置，我们为每个用户都创建一个 Computer 新实例就很不经济了。AssignedComputer 对象的作用是把计算机关联到用户。
+
+联用 Factory 和 Flyweight 模式是改善上述设计的常用方法。我们可以设计一个生产计算机标准品的单例工厂，如例 6-8 所示。
+
+```Groovy
+// 例 6-8 生产 flyweight 计算机实例的单例工厂
+class CompFactory {
+    def types = [:]
+    static def instance;
+
+    private ComputerFactory() {
+        def laptop = new Laptop()
+        def tower = new Desktop()
+        types.put("MacBookPro6_2", laptop)
+        types.put("SunTower", tower)
+    }
+
+    static def getInstance() {
+        if (instance == null)
+            instance = new CompFactory()
+        instance
+    }
+
+    def ofType(computer) {
+        types[computer]
+    }
+}
+```
+
+ComputerFactory 类建立了一个缓存来放置可能的计算机品类，外界通过它的 ofType() 方法来索取需要的实例。
+
+```Groovy
+// 例 6-9 简化的单例工厂
+@Singleton class ComputerFactory {
+    def types = [:]
+    private ComputerFactory() {
+        def laptop = new Laptop()
+        def tower = new Desktop()
+        types.put("MacBookPro6_2", laptop)
+        types.put("SunTower", tower)
+    }
+
+    def ofType(computer) {
+        types[computer]
+    }
+}
+```
+
+### 6.2.4 Factory模式和柯里化
+
+在设计模式的语境下，柯里化相当于产出函数的工厂。第一等函数（或高阶函数）是函数式编程语言共同的特性，我们可以用函数来充当其他任何的语言成分。因此我们可以很容易地设立一个根据条件来返回其他函数的函数，也就是函数工厂。
+
+```Groovy
+// 例 6-13 作为函数工厂的柯里化
+def adder = { x, y -> x + y}
+def incrementer = adder.curry(1)
+println "7 的递增： ${incrementer(7)}"
+```
+
+例 6-13 在 adder 上通过柯里化把第一个参数固定为 1，这就是我们的函数工厂，它会为我们产出一个单参数的函数。
+
+## 6.3 结构化重用和函数式重用的对比
+
+第 1 章有这么一段引言：
+
+> 面向对象编程通过封装不确定因素来使代码能被人理解；函数式编程通过尽量减少不确定因素来使代码能被人理解。——Michael Feathers
+
+每天在同一种抽象的包围下工作，我们的头脑会逐渐被它浸染，我们处理问题的方式也会被潜移默化。
+
+简化状态的封装和使用，是面向对象的目标之一。自然地，状态就成了面向对象的抽象用来解决问题的常规武器，维系状态所需的众多类和交互也因此被派生出来——这些正是Michael Feathers 所说的“不确定因素”。
+
+### 以结构为载体的代码重用
+
+命令式的、（尤其是）面向对象的编程风格，使用结构和消息作为建筑材料。如果一段面向对象的代码值得重用，那么我们会把它提取到另一个类中，然后通过继承来访问它。
+
